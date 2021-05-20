@@ -498,7 +498,7 @@ FRESULT res;
 char play_buffer[AUDIO_OUT_BUFFER_SIZE];
 unsigned char input_buffer[AUDIO_OUT_BUFFER_SIZE];
 unsigned char *input_buffer_pointer;
-short spare_buffer[AUDIO_OUT_BUFFER_SIZE/2];
+short spare_buffer[AUDIO_OUT_BUFFER_SIZE/2]; // short ma 16 bitów a char 8, wiec pamięciowo taka sama wielkość jak play_buffer 
 short *spare_buffer_pointer;
 int spare_buffer_offset = 0;
 int bytes_in_input_buffer = 0;
@@ -545,7 +545,7 @@ void decode(int play_offset){
 
 		//wrzucamy dane ze spare_buffera do którego zbieraliśmy dekodowane mp3 do play_buffera odpowiedzialnego za granie
 		memcpy(play_buffer + play_offset, spare_buffer, AUDIO_OUT_BUFFER_SIZE/2);
-		//po wrzuceniu danych do celu aktualizujemy spare_buffer
+		//po wrzuceniu danych do celu aktualizujemy spare_buffer, wysłaliśmy do play_buffera audio_out_buffer_size / 4 danych z powodu różnicy formatów, to co zostało to wrzucamy na początek
 		memcpy(spare_buffer, &spare_buffer[AUDIO_OUT_BUFFER_SIZE/4], (spare_buffer_offset - AUDIO_OUT_BUFFER_SIZE/4) * 2);
 		spare_buffer_offset -= AUDIO_OUT_BUFFER_SIZE/4;
 		spare_buffer_pointer = spare_buffer + spare_buffer_offset;
