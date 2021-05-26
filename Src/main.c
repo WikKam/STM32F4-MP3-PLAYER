@@ -466,6 +466,9 @@ FIL file;
 extern ApplicationTypeDef Appli_state;
 extern USBH_HandleTypeDef hUsbHostHS;
 #define AUDIO_OUT_BUFFER_SIZE 8192
+#define MAX_SONG_NAME_SIZE 100
+#define MAX_NUMBER_SONGS 50
+#define FW_PATH "0:/"
 enum {
     BUFFER_OFFSET_NONE = 0,
     BUFFER_OFFSET_HALF,
@@ -492,6 +495,8 @@ int bytes_in_input_buffer = 0;
 MP3FrameInfo mp3_frame_info;
 HMP3Decoder decoder;
 int title_offset = 0;
+char songs[MAX_NUMBER_SONGS][MAX_SONG_NAME_SIZE];
+int songs_number = 0;
 
 void decode(int play_offset) {
     uint32_t bytes_read = 0;
@@ -542,8 +547,70 @@ void decode(int play_offset) {
     buf_offs = BUFFER_OFFSET_NONE;
 }
 
+const char *get_filename_ext(const char *filename) {
+    const char *dot = strrchr(filename, '.');
+    if(!dot || dot == filename) return "";
+    return dot + 1;
+}
+
+void play_directory(const char* path) {
+    FRESULT res;
+    FILINFO fno;
+    DIR dir;
+    char *fn; /* This function is assuming non-Unicode cfg. */
+    char buffer[MAX_SONG_NAME_SIZE];
+#if _USE_LFN
+    static char lfn[_MAX_LFN + 1];
+	fno.lfname = lfn;
+	fno.lfsize = sizeof(lfn);
+#endif
+
+
+    res = f_opendir(&dir, path); /* Open the directory */
+    if (res == FR_OK) {
+        for (;;) {
+            res = f_readdir(&dir, &fno); /* Read a directory item */
+            if (res != FR_OK || fno.fname[0] == 0) break; /* Break on error or end of dir */
+            if (fno.fname[0] == '.' || fno.fname[0] == '_' ) continue; /* Ignore dot entry and file starting with _  */
+#if _USE_LFN
+            fn = *fno.lfname ? fno.lfname : fno.fname;
+#else
+            fn = fno.fname;
+#endif
+            if (fno.fattrib & AM_DIR) { /* It is a directory */
+
+            } else { /* It is a file. */
+                sprintf(buffer, "%s/%s", path, fn);
+                // Check if it is an mp3 file
+                if (strcmp("MP3", get_filename_ext(buffer)) == 0) {
+                    xprintf("Song2: %s\n", buffer);
+                    play_new(buffer);
+                }
+            }
+        }
+    }
+    return ;
+}
+
+void find_mp3_files() {
+    FRESULT fr;     /* Return value */
+    DIR dj;         /* Directory object */
+    FILINFO fno;    /* File information */
+
+    fr = f_findfirst(&dj, &fno, "", "*.MP3"); /* Start to search for photo files */
+    while (fr == FR_OK && fno.fname[0]) {         /* Repeat while an item is found */
+        // omit filenames with . and _ at the beginning
+        xprintf("%s\n", fno.fname);                /* Print the object name */
+        if (fno.fname[0] != '.' && fno.fname[0] != '_' ) {
+            strcpy(songs[songs_number++], fno.fname);
+        }
+        fr = f_findnext(&dj, &fno);               /* Search for next item */
+    }
+    f_closedir(&dj);
+}
+
 void play_new(char *filename) {
-    xprintf("Song: %s\n", filename);
+    xprintf("Song3: %s\n", filename);
     title_offset = 0;
     res = f_open(&file, filename, FA_READ);
     if (res == FR_OK) {
@@ -560,13 +627,38 @@ void play_new(char *filename) {
     player_state1 = PLAYING;
     fpos = 0;
     buf_offs = BUFFER_OFFSET_NONE;
-}
 
+    for(;;) {
+        char in = debug_inkey();
+        if (in == 'w') {
+            volume_up();
+        } else if (in == 's') {
+            volume_down();
+        } else if (in == 'p') {
+            pause();
+        } else if (in == 'r') {
+            resume();
+        }
+
+        if (player_state1 == PLAYING) {
+            if (buf_offs == BUFFER_OFFSET_HALF) {
+                decode(0);
+            }
+            if (buf_offs == BUFFER_OFFSET_FULL) {
+                decode(AUDIO_OUT_BUFFER_SIZE / 2);
+            }
+            if (bytes_in_input_buffer == 0) {
+                end_song();
+                return;
+            }
+        }
+    }
+}
 
 void end_song() {
     BSP_AUDIO_OUT_Stop(CODEC_PDWN_SW);
     f_close(&file);
-    xprintf("End of song");
+    xprintf("End of song\n");
     player_state1 = FINISHED;
     spare_buffer_offset = 0;
     bytes_in_input_buffer = 0;
@@ -579,8 +671,7 @@ int volume_up() {
             xprintf("ERROR: Failed to set audio volume\n");
             return -1;
         }
-        xprintf("%c: volume up", in);
-        xprintf("current volume: %d\n", volume);
+        xprintf("w: volume up. Current volume: %d\n", volume);
     } else {
         xprintf("cannot resume in this state :( \n");
     }
@@ -593,8 +684,7 @@ int volume_down() {
             xprintf("ERROR: Failed to set audio volume\n");
             return -1;
         }
-        xprintf("%c: volume down", in);
-        xprintf("current volume: %d\n", volume);
+        xprintf("s: volume down. Current volume: %d\n", volume);
     } else {
         xprintf("cannot resume in this state :( \n");
     }
@@ -721,7 +811,6 @@ void StartDefaultTask(void const *argument) {
     /* init code for USB_HOST */
     MX_USB_HOST_Init();
 
-
     /* init code for FATFS */
     MX_FATFS_Init();
 
@@ -739,8 +828,7 @@ void StartDefaultTask(void const *argument) {
     } while (Appli_state != APPLICATION_READY);
 
 
-    FRESULT res;
-
+//    FRESULT res;
     decoder = MP3InitDecoder();
 
     if (BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_AUTO, 70, 44100) == 0) {
@@ -748,35 +836,14 @@ void StartDefaultTask(void const *argument) {
     } else {
         xprintf("audio init ERROR\n");
     }
-    play_new("0:/sample.mp3");
 
     /* Infinite loop */
     for (;;) {
-        char in = debug_inkey();
-        if (in == 'w') {
-            volume_up();
-        } else if (in == 's') {
-            volume_down();
-        } else if (in == 'p') {
-            pause();
-        } else if (in == 'r') {
-            resume();
-        }
-
-        if (player_state1 == PLAYING) {
-            if (buf_offs == BUFFER_OFFSET_HALF) {
-                decode(0);
-            }
-            if (buf_offs == BUFFER_OFFSET_FULL) {
-                decode(AUDIO_OUT_BUFFER_SIZE / 2);
-            }
-            if (bytes_in_input_buffer == 0) {
-                end_song();
-//                play_new("0:/sample.mp3");
-            }
-        }
+        find_mp3_files();
+        printf("Songs number: %d\n", songs_number);
+        for(int i = 0; i < songs_number; i++) xprintf("%s\n", songs[i]);
+        play_directory(FW_PATH);
         vTaskDelay(1);
-
     }
     /* USER CODE END 5 */
 }
