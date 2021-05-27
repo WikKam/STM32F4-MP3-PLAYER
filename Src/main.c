@@ -622,18 +622,21 @@ void pause() {
     }
 }
 
-void shift_song(char in) {
+int shift_song(char in) {
     if (player_state1 == PLAYING) {
         end_song();
         if(in == 'n') {
             xprintf("playing next song...\n");
             player_state1 = NEXT;
+            return EXIT_SUCCESS;
         } else {
             xprintf("playing previous song...\n");
             player_state1 = PREVIOUS;
+            return EXIT_SUCCESS;
         }
     } else {
         xprintf("cannot resume in this state :( \n");
+        return EXIT_FAILURE;
     }
 }
 
@@ -666,8 +669,7 @@ void play_mp3(char *filename) {
         } else if (in == 'r') {
             resume();
         } else if (in == 'n' || in == 'q') {
-            shift_song(in);
-            return;
+            if(shift_song(in) == 0) return;
         }
 
         if (player_state1 == PLAYING) {
