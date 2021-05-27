@@ -60,7 +60,8 @@
 #include "term_io.h"
 #include "dbgu.h"
 #include "mp3dec.h"
-
+#include "ctype.h"
+#include "genres.h"
 
 /* USER CODE END Includes */
 
@@ -498,6 +499,95 @@ HMP3Decoder decoder;
 int title_offset = 0;
 char songs[MAX_NUMBER_SONGS][MAX_SONG_NAME_SIZE];
 int songs_number = 0;
+typedef struct {
+    char tag[3];
+    char title[30];
+    char artist[30];
+    char album[30];
+    char year[4];
+    char comment[30];
+    unsigned char genre;
+} mp3Tag;
+
+char *copyTagText(char *src, char*dst, int size) {
+    int foundData = 0;
+    dst[size] = 0;
+    for(int i = 0; i < size; i++) {
+        char ch = src[i];
+        if(!foundData) { foundData = (ch!=0 && !isspace(ch)); }
+        dst[i] = foundData ? ch : 0;
+    }
+    return src + size;
+}
+
+void loadId3v1Tag(char *pointer_to_buffer, mp3Tag *tag) {
+    char *dst = tag -> title;
+    pointer_to_buffer = copyTagText(pointer_to_buffer, dst, 30);
+    dst = tag -> artist;
+    pointer_to_buffer = copyTagText(pointer_to_buffer, dst, 30);
+    dst = tag -> album;
+    pointer_to_buffer = copyTagText(pointer_to_buffer, dst, 30);
+    dst = tag -> year;
+    pointer_to_buffer = copyTagText(pointer_to_buffer, dst, 4);
+    dst = tag -> comment;
+    pointer_to_buffer = copyTagText(pointer_to_buffer, dst, 30);
+    tag -> genre = pointer_to_buffer[0];
+//        if (tag.comment[28] == '\0') {
+//            xprintf("Comment: %.28s\n", tag.comment);
+//            xprintf("Track: %d\n", tag.comment[29]);
+//        } else {
+//            xprintf("Comment: %.30s\n", tag.comment);
+//        }
+//        xprintf("Genre: %d\n", tag.genre);
+    return;
+}
+
+int print_id3tag(char *filename) {
+    FIL fp;
+    FRESULT res;
+    mp3Tag tag;
+    char buff[sizeof(mp3Tag)];
+
+    // open mp3 file
+    res = f_open(&fp, filename, FA_READ);
+    if (res != FR_OK) {
+        xprintf("mp3 file open ERROR, res = %d\n", res);
+        return EXIT_FAILURE;
+    }
+
+    // Seek to 128 bytes before the end of the file
+    if (f_lseek(&fp, f_size(&fp) - sizeof(mp3Tag)) != FR_OK) {
+        xprintf("fseek failed");
+        return EXIT_FAILURE;
+    }
+
+    // Read the tag
+    uint32_t bytes_read1 = 0;
+    if (f_read(&fp, buff, sizeof(mp3Tag), (void *) &bytes_read1) != FR_OK) {
+        xprintf("Failed reading tag\n");
+        return EXIT_FAILURE;
+    }
+
+    // Make sure we've got what we expect.
+    if (buff[0]!='T' || buff[1]!='A' || buff[2]!='G') {
+        printf("Failed to find TAG\n");
+    } else {
+        xprintf("Read %ld bytes\n", bytes_read1);
+        char *pointer_to_buffer = buff + 3;
+        loadId3v1Tag(pointer_to_buffer, &tag);
+        xprintf("Title: %s\n", tag.title);
+        xprintf("Artist: %s\n", tag.artist);
+        xprintf("Album: %s\n", tag.album);
+        xprintf("Year: %s\n", tag.year);
+        xprintf("Comment: %s\n", tag.comment);
+        xprintf("Genre: %s\n", convert_genre_number(tag.genre));
+        pointer_to_buffer = 0;
+    }
+
+    f_lseek(&fp, 0);
+    f_close(&fp);
+    return EXIT_SUCCESS;
+}
 
 void decode(int play_offset) {
     uint32_t bytes_read = 0;
@@ -642,6 +732,7 @@ int shift_song(char in) {
 
 void play_mp3(char *filename) {
     title_offset = 0;
+    print_id3tag(filename);
     res = f_open(&file, filename, FA_READ);
     if (res == FR_OK) {
         xprintf("%s open OK. Playing song\n", filename);
