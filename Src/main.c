@@ -532,13 +532,6 @@ void loadId3v1Tag(char *pointer_to_buffer, mp3Tag *tag) {
     dst = tag -> comment;
     pointer_to_buffer = copyTagText(pointer_to_buffer, dst, 30);
     tag -> genre = pointer_to_buffer[0];
-//        if (tag.comment[28] == '\0') {
-//            xprintf("Comment: %.28s\n", tag.comment);
-//            xprintf("Track: %d\n", tag.comment[29]);
-//        } else {
-//            xprintf("Comment: %.30s\n", tag.comment);
-//        }
-//        xprintf("Genre: %d\n", tag.genre);
     return;
 }
 
@@ -785,7 +778,7 @@ void play_songs() {
         play_mp3(songs[i]);
         if(player_state1 == NEXT || player_state1 == FINISHED) i++;
         if(player_state1 == PREVIOUS) i--;
-        printf("state: %d; i: %d", player_state1, i);
+        xprintf("state: %d; i: %d", player_state1, i);
     }
 }
 
